@@ -29,7 +29,7 @@ docker compose up --build
 ```
 
 Services started:
-- **frontend** – Next.js app on `localhost:3000`
+- **frontend** – Next.js app on `localhost:3001`
 - **backend** – Express API on `localhost:4000` with a `/storage` volume for uploads and job data
 - **minio** – S3-compatible storage on `localhost:9000` (user `minio`, password `minio123`)
 
