@@ -59,12 +59,48 @@ app.post('/gpt', async (req, res) => {
   try {
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const completion = await client.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'gpt-4o',
       messages: [
         { role: 'user', content: req.body.prompt ?? 'Hello from API' }
       ]
     });
     res.json(completion.choices[0].message);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/segments', async (req, res) => {
+  const { jobId, transcript } = req.body || {};
+  if (!jobId || !transcript) {
+    return res.status(400).json({ error: 'jobId and transcript are required' });
+  }
+  try {
+    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const completion = await client.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You divide transcripts into topic segments. Return JSON array of {start,end,prompt} in seconds.'
+        },
+        { role: 'user', content: transcript }
+      ],
+      temperature: 0.3
+    });
+    const raw = completion.choices[0].message.content.trim();
+    let segments;
+    try {
+      segments = JSON.parse(raw);
+    } catch (e) {
+      const match = raw.match(/\[.*\]/s);
+      segments = match ? JSON.parse(match[0]) : [];
+    }
+    const outPath = path.join('/storage', jobId, 'segments.json');
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    fs.writeFileSync(outPath, JSON.stringify({ segments }, null, 2));
+    res.json({ segments });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
