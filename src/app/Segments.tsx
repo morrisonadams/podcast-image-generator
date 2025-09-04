@@ -8,12 +8,14 @@ interface Segment {
   title?: string;
 }
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 export default function Segments({ jobId }: { jobId: string }) {
   const [segments, setSegments] = useState<Segment[]>([]);
 
   useEffect(() => {
     if (!jobId) return;
-    const es = new EventSource(`http://localhost:8000/segments/${jobId}`);
+    const es = new EventSource(`${API_URL}/segments/${jobId}`);
     es.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
@@ -36,7 +38,7 @@ export default function Segments({ jobId }: { jobId: string }) {
       {segments.map((seg) => (
         <div key={seg.id}>
           <img
-            src={`http://localhost:8000${seg.image_url}`}
+            src={`${API_URL}${seg.image_url}`}
             alt={seg.title || ''}
             width={320}
           />
