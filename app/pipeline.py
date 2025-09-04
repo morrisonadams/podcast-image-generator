@@ -20,6 +20,8 @@ IMAGE_MODEL = os.getenv("IMAGE_MODEL", "gpt-image-1")
 # Image backend: "openai" or "sd" (Stable Diffusion via AUTOMATIC1111 API)
 IMAGE_BACKEND = os.getenv("IMAGE_BACKEND", "openai").lower()
 SD_URL = os.getenv("SD_URL", "http://localhost:7860/sdapi/v1/txt2img")
+# Optional prefix to tweak all image prompts (e.g. style or medium)
+IMAGE_PROMPT_PREFIX = os.getenv("IMAGE_PROMPT_PREFIX", "")
 
 client = OpenAI()
 
@@ -151,8 +153,9 @@ def propose_segments(transcript: str, audio_path: str) -> List[Dict[str, Any]]:
 def generate_image(prompt: str, images_dir: Path, segment_id: int) -> Path:
     """Generate one image using configured backend and save it under images_dir."""
     out = images_dir / f"{segment_id}.png"
+    full_prompt = f"{IMAGE_PROMPT_PREFIX} {prompt}".strip()
     if IMAGE_BACKEND == "sd":
-        resp = requests.post(SD_URL, json={"prompt": prompt})
+        resp = requests.post(SD_URL, json={"prompt": full_prompt})
         resp.raise_for_status()
         data = resp.json()
         b64 = data.get("images", [None])[0]
@@ -161,7 +164,7 @@ def generate_image(prompt: str, images_dir: Path, segment_id: int) -> Path:
     else:
         img = client.images.generate(
             model=IMAGE_MODEL,
-            prompt=prompt,
+            prompt=full_prompt,
             size="1024x1024",
             n=1,
         )
