@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import Segments from './Segments';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 export default function Home() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -14,13 +16,18 @@ export default function Home() {
     if (!file) return;
     const formData = new FormData();
     formData.append('file', file);
-    const res = await fetch('http://localhost:8000/upload', {
+    const res = await fetch(`${API_URL}/upload`, {
       method: 'POST',
       body: formData,
     });
     const data = await res.json();
-    setJobId(data.job_id);
-    setAudioUrl('http://localhost:8000' + data.audio_url);
+    // Support both camelCase and snake_case responses
+    const id = data.job_id || data.jobId;
+    setJobId(id);
+    const audioPath = data.audio_url || data.audioUrl;
+    if (audioPath) {
+      setAudioUrl(`${API_URL}${audioPath}`);
+    }
   };
 
   return (
