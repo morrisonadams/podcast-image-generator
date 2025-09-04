@@ -63,8 +63,4 @@ async def get_segments(job_id: str):
         return JSONResponse({"status":"missing","segments":[]})
     with open(segments_path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    # Convert file paths to served URLs
-    for seg in data.get("segments", []):
-        if seg.get("image_path"):
-            seg["image_url"] = f"/files/{job_id}/{Path(seg['image_path']).name}"
     return JSONResponse(data)
