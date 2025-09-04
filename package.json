@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "next build --turbopack",
-    "start": "next start",
+    "dev": "next dev ./src --turbopack",
+    "build": "next build ./src --turbopack",
+    "start": "next start ./src",
     "lint": "eslint",
     "test": "echo 'No tests'"
   },
