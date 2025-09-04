@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Audio to Illustrations</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 24px; }
+    .wrap { max-width: 900px; margin: 0 auto; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin-top: 16px; }
+    .row { display: flex; gap: 16px; align-items: flex-start; }
+    .col { flex: 1; }
+    .imgbox { width: 100%; max-height: 420px; display: flex; align-items: center; justify-content: center; border: 1px dashed #aaa; border-radius: 12px; overflow: hidden; }
+    .imgbox img { width: 100%; height: auto; display: block; }
+    .muted { color: #666; font-size: 14px; }
+    .seg { padding: 8px 0; border-bottom: 1px solid #eee; }
+    .seg:last-child { border-bottom: none; }
+    code { background: #f7f7f7; padding: 2px 6px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Audio to Illustrations</h1>
+    <form class="card" id="uploadForm" enctype="multipart/form-data">
+      <div><strong>Upload audio</strong></div>
+      <p class="muted">MP3, WAV, or M4A usually work.</p>
+      <input type="file" name="file" accept="audio/*" required />
+      <button type="submit">Start</button>
+      <div id="status" class="muted"></div>
+    </form>
+
+    <div class="card" id="playerCard" style="display:none;">
+      <div class="row">
+        <div class="col">
+          <audio id="player" controls style="width:100%;"></audio>
+          <div id="currentSeg" class="muted" style="margin-top:8px;"></div>
+          <div id="segList" style="margin-top:8px;"></div>
+        </div>
+        <div class="col">
+          <div class="imgbox" id="imgbox">
+            <span class="muted">Image will appear as topics change</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const form = document.getElementById('uploadForm');
+const statusEl = document.getElementById('status');
+const playerCard = document.getElementById('playerCard');
+const player = document.getElementById('player');
+const imgbox = document.getElementById('imgbox');
+const currentSegEl = document.getElementById('currentSeg');
+const segListEl = document.getElementById('segList');
+
+let jobId = null;
+let segments = [];
+let pollTimer = null;
+let tickTimer = null;
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  statusEl.textContent = 'Uploading...';
+  const fd = new FormData(form);
+  const res = await fetch('/upload', { method: 'POST', body: fd });
+  if (!res.ok) { statusEl.textContent = 'Upload failed'; return; }
+  const data = await res.json();
+  jobId = data.job_id;
+  statusEl.textContent = 'Processing... This can take a few minutes on first run.';
+  player.src = data.audio_url;
+  playerCard.style.display = 'block';
+  startPolling();
+  startTick();
+});
+
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    if (!jobId) return;
+    const res = await fetch(`/segments/${jobId}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    segments = data.segments || [];
+    renderSegList();
+  }, 3000);
+}
+
+function startTick() {
+  if (tickTimer) clearInterval(tickTimer);
+  tickTimer = setInterval(() => {
+    if (!segments.length) return;
+    const t = player.currentTime;
+    let active = null;
+    for (const seg of segments) {
+      if (t >= seg.start && t < seg.end) { active = seg; break; }
+    }
+    if (active) {
+      currentSegEl.textContent = `${formatTime(active.start)} to ${formatTime(active.end)} — ${active.title}`;
+      if (active.image_url) {
+        imgbox.innerHTML = `<img src="${active.image_url}" alt="${active.title}">`;
+      }
+    }
+  }, 500);
+}
+
+function renderSegList() {
+  if (!segments.length) { segListEl.innerHTML = ''; return; }
+  segListEl.innerHTML = segments.map(s => 
+    `<div class="seg"><strong>${s.title}</strong><br>
+     <span class="muted">${formatTime(s.start)} to ${formatTime(s.end)}</span><br>
+     <small>Prompt: <code>${escapeHtml(s.prompt || '')}</code></small></div>`
+  ).join('');
+}
+
+function formatTime(sec) {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60).toString().padStart(2,'0');
+  return `${m}:${s}`;
+}
+function escapeHtml(str) {
+  return str.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+</script>
+</body>
+</html>
