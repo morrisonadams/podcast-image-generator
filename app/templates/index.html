@@ -56,8 +56,8 @@ const segListEl = document.getElementById('segList');
 
 let jobId = null;
 let segments = [];
-let pollTimer = null;
-let tickTimer = null;
+let evtSource = null;
+let currentSegId = null;
 
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -70,38 +70,37 @@ form.addEventListener('submit', async (e) => {
   statusEl.textContent = 'Processing... This can take a few minutes on first run.';
   player.src = data.audio_url;
   playerCard.style.display = 'block';
-  startPolling();
-  startTick();
+  startStream();
+  player.removeEventListener('timeupdate', onTimeUpdate);
+  player.addEventListener('timeupdate', onTimeUpdate);
 });
 
-function startPolling() {
-  if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(async () => {
-    if (!jobId) return;
-    const res = await fetch(`/segments/${jobId}`);
-    if (!res.ok) return;
-    const data = await res.json();
-    segments = data.segments || [];
-    renderSegList();
-  }, 3000);
+function startStream() {
+  if (evtSource) evtSource.close();
+  evtSource = new EventSource(`/segments/${jobId}`);
+  evtSource.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      segments = data.segments || [];
+      renderSegList();
+    } catch {}
+  };
 }
 
-function startTick() {
-  if (tickTimer) clearInterval(tickTimer);
-  tickTimer = setInterval(() => {
-    if (!segments.length) return;
-    const t = player.currentTime;
-    let active = null;
-    for (const seg of segments) {
-      if (t >= seg.start && t < seg.end) { active = seg; break; }
+function onTimeUpdate() {
+  if (!segments.length) return;
+  const t = player.currentTime;
+  let active = null;
+  for (const seg of segments) {
+    if (t >= seg.start && t < seg.end) { active = seg; break; }
+  }
+  if (active && active.id !== currentSegId) {
+    currentSegId = active.id;
+    currentSegEl.textContent = `${formatTime(active.start)} to ${formatTime(active.end)} — ${active.title}`;
+    if (active.image_url) {
+      imgbox.innerHTML = `<img src="${active.image_url}" alt="${active.title}">`;
     }
-    if (active) {
-      currentSegEl.textContent = `${formatTime(active.start)} to ${formatTime(active.end)} — ${active.title}`;
-      if (active.image_url) {
-        imgbox.innerHTML = `<img src="${active.image_url}" alt="${active.title}">`;
-      }
-    }
-  }, 500);
+  }
 }
 
 function renderSegList() {
