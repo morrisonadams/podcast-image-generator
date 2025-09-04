@@ -7,6 +7,17 @@ import { OpenAI } from 'openai';
 
 const app = express();
 
+// Basic request logger to help diagnose connection issues
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
+  next();
+});
+
+// Log unhandled promise rejections which might reset connections
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection:', reason);
+});
+
 // Configure multer storage to place files under /storage/{jobId}/audio
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -38,6 +49,7 @@ app.use(express.json());
 app.post('/upload', (req, res) => {
   upload.single('audio')(req, res, (err) => {
     if (err) {
+      console.error('Upload error:', err);
       if (err.message === 'Invalid file type') {
         return res.status(400).json({ error: err.message });
       }
@@ -66,6 +78,7 @@ app.post('/gpt', async (req, res) => {
     });
     res.json(completion.choices[0].message);
   } catch (err) {
+    console.error('Error in /gpt:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -102,11 +115,18 @@ app.post('/segments', async (req, res) => {
     fs.writeFileSync(outPath, JSON.stringify({ segments }, null, 2));
     res.json({ segments });
   } catch (err) {
+    console.error('Error in /segments:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
 const PORT = process.env.PORT || 4000;
+// Global error handler to log uncaught errors
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: 'Internal server error' });
+});
+
 app.listen(PORT, () => {
   console.log(`API running on port ${PORT}`);
 });
