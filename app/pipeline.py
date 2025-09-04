@@ -25,7 +25,11 @@ def process_audio(audio_path: str, job_dir: str) -> None:
     job = Path(job_dir)
     seg_json = job / "segments.json"
     try:
-        transcript = transcribe(audio_path) if ENABLE_TRANSCRIPTION else "(transcription disabled)"
+        transcript = (
+            transcribe(audio_path, job_dir)
+            if ENABLE_TRANSCRIPTION
+            else "(transcription disabled)"
+        )
         segments = propose_segments(transcript, audio_path)
 
         # Generate images per segment
@@ -39,15 +43,27 @@ def process_audio(audio_path: str, job_dir: str) -> None:
     except Exception as e:
         seg_json.write_text(json.dumps({"status":"error","error": str(e)}), encoding="utf-8")
 
-def transcribe(audio_path: str) -> str:
+def transcribe(audio_path: str, job_dir: str) -> str:
+    """Run Whisper transcription and persist full JSON with timestamps."""
     if not ENABLE_TRANSCRIPTION:
         return ""
+    job = Path(job_dir)
+    transcript_path = job / "transcript.json"
     with open(audio_path, "rb") as f:
         # Whisper speech to text
         # Note: the OpenAI SDK uses "audio.transcriptions.create" for Whisper v1.
-        transcript = client.audio.transcriptions.create(model=TRANSCRIBE_MODEL, file=f)
-    text = transcript.text if hasattr(transcript, "text") else str(transcript)
-    return text
+        transcript = client.audio.transcriptions.create(
+            model=TRANSCRIBE_MODEL,
+            file=f,
+            response_format="verbose_json",
+        )
+    # Convert to plain dict for JSON serialization
+    data = transcript.model_dump() if hasattr(transcript, "model_dump") else transcript
+    transcript_path.write_text(json.dumps(data), encoding="utf-8")
+    # Return the combined text for downstream segment proposal
+    if isinstance(data, dict) and "text" in data:
+        return data["text"]
+    return transcript.text if hasattr(transcript, "text") else str(transcript)
 
 def propose_segments(transcript: str, audio_path: str) -> List[Dict[str, Any]]:
     """
