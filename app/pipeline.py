@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 from typing import List, Dict, Any
 
+import base64
+import requests
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -15,6 +17,10 @@ TRANSCRIBE_MODEL = os.getenv("TRANSCRIBE_MODEL", "whisper-1")
 TOPIC_MODEL = os.getenv("TOPIC_MODEL", "gpt-4o-mini")
 IMAGE_MODEL = os.getenv("IMAGE_MODEL", "gpt-image-1")
 
+# Image backend: "openai" or "sd" (Stable Diffusion via AUTOMATIC1111 API)
+IMAGE_BACKEND = os.getenv("IMAGE_BACKEND", "openai").lower()
+SD_URL = os.getenv("SD_URL", "http://localhost:7860/sdapi/v1/txt2img")
+
 client = OpenAI()
 
 def process_audio(audio_path: str, job_dir: str) -> None:
@@ -24,6 +30,9 @@ def process_audio(audio_path: str, job_dir: str) -> None:
     """
     job = Path(job_dir)
     seg_json = job / "segments.json"
+    images_dir = job / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
+    job_id = job.name
     try:
         transcript = (
             transcribe(audio_path, job_dir)
@@ -33,12 +42,16 @@ def process_audio(audio_path: str, job_dir: str) -> None:
         segments = propose_segments(transcript, audio_path)
 
         # Generate images per segment
-        for seg in segments:
+        for idx, seg in enumerate(segments):
             prompt = seg.get("prompt") or seg.get("title", "topic illustration")
-            image_path = generate_image(prompt, job) if ENABLE_IMAGE_GEN else create_placeholder(job, prompt)
-            seg["image_path"] = str(image_path)
+            if ENABLE_IMAGE_GEN:
+                generate_image(prompt, images_dir, idx)
+            else:
+                create_placeholder(images_dir, prompt, idx)
+            seg["id"] = idx
+            seg["image_url"] = f"/files/{job_id}/images/{idx}.png"
 
-        payload = {"status":"ready", "segments": segments}
+        payload = {"status": "ready", "segments": segments}
         seg_json.write_text(json.dumps(payload), encoding="utf-8")
     except Exception as e:
         seg_json.write_text(json.dumps({"status":"error","error": str(e)}), encoding="utf-8")
@@ -135,35 +148,37 @@ def propose_segments(transcript: str, audio_path: str) -> List[Dict[str, Any]]:
         return propose_segments("", audio_path)
     return cleaned
 
-def generate_image(prompt: str, job: Path) -> Path:
-    """
-    Generate one 1024x1024 image using the Images API and save it under the job dir.
-    """
-    img = client.images.generate(
-        model=IMAGE_MODEL,
-        prompt=prompt,
-        size="1024x1024",
-        n=1,
-    )
-    b64 = img.data[0].b64_json
-    import base64
+def generate_image(prompt: str, images_dir: Path, segment_id: int) -> Path:
+    """Generate one image using configured backend and save it under images_dir."""
+    out = images_dir / f"{segment_id}.png"
+    if IMAGE_BACKEND == "sd":
+        resp = requests.post(SD_URL, json={"prompt": prompt})
+        resp.raise_for_status()
+        data = resp.json()
+        b64 = data.get("images", [None])[0]
+        if not b64:
+            raise RuntimeError("Stable Diffusion did not return an image")
+    else:
+        img = client.images.generate(
+            model=IMAGE_MODEL,
+            prompt=prompt,
+            size="1024x1024",
+            n=1,
+        )
+        b64 = img.data[0].b64_json
     raw = base64.b64decode(b64)
-    out = job / f"{safe_name(prompt)[:40]}_{len(list(job.glob('*.png'))):02d}.png"
     out.write_bytes(raw)
     return out
 
-def create_placeholder(job: Path, prompt: str) -> Path:
-    """
-    Create a tiny placeholder PNG so the UI still works without image gen.
-    """
-    from PIL import Image, ImageDraw, ImageFont
-    out = job / f"{safe_name(prompt)[:40]}_{len(list(job.glob('*.png'))):02d}.png"
+
+def create_placeholder(images_dir: Path, prompt: str, segment_id: int) -> Path:
+    """Create a simple placeholder PNG so the UI still works without image gen."""
+    from PIL import Image, ImageDraw
+
+    out = images_dir / f"{segment_id}.png"
     img = Image.new("RGB", (800, 600), (240, 240, 240))
     d = ImageDraw.Draw(img)
-    text = f"Placeholder\\n{prompt[:80]}"
-    d.multiline_text((20, 20), text, fill=(0,0,0))
+    text = f"Placeholder\n{prompt[:80]}"
+    d.multiline_text((20, 20), text, fill=(0, 0, 0))
     img.save(out)
     return out
-
-def safe_name(s: str) -> str:
-    return "".join(c for c in s if c.isalnum() or c in ("-","_"," ")).strip().replace(" ","_")

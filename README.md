@@ -42,5 +42,16 @@ npm run lint          # ESLint
 npm --prefix api test # placeholder tests for API
 ```
 
+## Image Generation Backend
+
+The FastAPI app in `app/` can produce illustrations for each audio segment. By default it uses the OpenAI Images API, but it can also query a local Stable Diffusion server.
+
+Environment variables:
+
+- `IMAGE_BACKEND`: set to `openai` (default) or `sd` to use a Stable Diffusion API.
+- `SD_URL`: URL of the Stable Diffusion `txt2img` endpoint (defaults to `http://localhost:7860/sdapi/v1/txt2img`).
+
+Images are saved under `/storage/{jobId}/images/{segmentId}.png` and the served URLs are recorded in the job's `segments.json` file.
+
 ## License
 MIT
