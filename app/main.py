@@ -1,11 +1,12 @@
 import os
 import uuid
 import json
+import asyncio
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 from fastapi import FastAPI, Request, UploadFile, File
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -56,11 +57,34 @@ async def upload(file: UploadFile = File(...)):
     return JSONResponse({"job_id": job_id, "audio_url": audio_url})
 
 @app.get("/segments/{job_id}")
-async def get_segments(job_id: str):
+async def stream_segments(request: Request, job_id: str):
+    """Server-Sent Events stream that emits segment JSON when updated."""
+    import asyncio
+
     job_dir = STORAGE / job_id
     segments_path = job_dir / "segments.json"
-    if not segments_path.exists():
-        return JSONResponse({"status":"missing","segments":[]})
-    with open(segments_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    return JSONResponse(data)
+
+    async def event_generator():
+        last_mtime = None
+        sent_initial = False
+        while True:
+            if await request.is_disconnected():
+                break
+
+            if segments_path.exists():
+                mtime = segments_path.stat().st_mtime
+                if not sent_initial or mtime != last_mtime:
+                    last_mtime = mtime
+                    with open(segments_path, "r", encoding="utf-8") as f:
+                        payload = f.read()
+                    yield f"data: {payload}\n\n"
+                    sent_initial = True
+            else:
+                if not sent_initial:
+                    payload = json.dumps({"status": "missing", "segments": []})
+                    yield f"data: {payload}\n\n"
+                    sent_initial = True
+
+            await asyncio.sleep(1)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
